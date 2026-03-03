@@ -1,70 +1,72 @@
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
 import sys
-import requests
-import re
-from urllib.parse import urljoin
-from html.parser import HTMLParser
 
+class SimpleEngine:
+    def __init__(self, link):
+        self.link = link
+        self.driver = self.start_browser()
 
-class PageReader(HTMLParser):
-    def __init__(self, base):
-        super().__init__()
-        self.base = base
-        self.in_title = False
-        self.in_body = False
-        self.title_text = ""
-        self.body_text = []
-        self.links = []
+    def start_browser(self):
+        opts = Options()
+        opts.add_argument("--headless=new")
+        opts.add_argument("--no-sandbox")
+        opts.add_argument("--disable-dev-shm-usage")
+        opts.add_argument("--disable-gpu")
 
-    def handle_starttag(self, tag, attrs):
-        if tag == "title":
-            self.in_title = True
-        if tag == "body":
-            self.in_body = True
-        if tag == "a":
-            for k, v in attrs:
-                if k == "href":
-                    self.links.append(urljoin(self.base, v))
+        # Block images, fonts, CSS to load faster
+        prefs = {
+            "profile.managed_default_content_settings.images": 2,
+            "profile.managed_default_content_settings.fonts": 2,
+        }
+        opts.add_experimental_option("prefs", prefs)
 
-    def handle_endtag(self, tag):
-        if tag == "title":
-            self.in_title = False
-        if tag == "body":
-            self.in_body = False
+        return webdriver.Chrome(options=opts)
 
-    def handle_data(self, data):
-        if self.in_title:
-            self.title_text += data.strip()
-        if self.in_body:
-            cleaned = data.strip()
-            if cleaned:
-                self.body_text.append(cleaned)
+    def scrape(self):
+        self.driver.get(self.link)
 
+        try:
+            WebDriverWait(self.driver, 15).until(
+                lambda d: len(d.find_element(By.TAG_NAME, "body").text.strip()) > 50
+            )
+        except:
+            print("Page took too long or has no content.")
+            self.driver.quit()
+            return
 
-def main():
+        # Title
+        title = self.driver.title
+        print(title if title else "No title")
+        print()
 
-    if len(sys.argv) < 2:
-        print("Enter URL")
-        return
+        # Body text
+        body = self.driver.find_elements(By.TAG_NAME, "body")
+        for part in body:
+            print(part.text)
+        print()
 
-    u = sys.argv[1]
-    if not u.startswith(("http://", "https://")):
-        u = "https://" + u
+        # Links
+        print("Links:")
+        links = self.driver.find_elements(By.TAG_NAME, "a")
+        for tag in links:
+            href = tag.get_attribute("href")
+            if href:
+                print(href)
 
-    try:
-        page = requests.get(u, timeout=5)
-    except:
-        print("Failed")
-        return
-
-    parser = PageReader(u)
-    parser.feed(page.text)
-
-    print(parser.title_text if parser.title_text else "No title")
-    print("\n".join(parser.body_text) if parser.body_text else "No body")
-
-    for link in parser.links:
-        print(link)
-
+        self.driver.quit()
 
 if __name__ == "__main__":
-    main()
+    if len(sys.argv) < 2:
+        print("Enter URL")
+        sys.exit()
+
+    url = sys.argv[1]
+    if not url.startswith("http"):
+        url = "https://" + url
+
+    engine = SimpleEngine(url)
+    engine.scrape()
